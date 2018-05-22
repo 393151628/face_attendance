@@ -1,4 +1,5 @@
 # -*- coding:utf8 -*-
+import sys
 import socket
 import hashlib
 import threading
@@ -295,6 +296,5 @@ class WebSocketServer(object):
 
 
 if __name__ == "__main__":
-    args = input('输入端口')
-    server = WebSocketServer(HOST, int(args))
+    server = WebSocketServer(HOST, int(sys.argv[1]))
     server.begin()

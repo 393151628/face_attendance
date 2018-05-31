@@ -4,6 +4,7 @@ import socket
 import hashlib
 import threading
 import datetime
+import time
 import struct
 from base64 import b64encode, b64decode
 from mtcnn.mtcnn import MTCNN
@@ -12,6 +13,8 @@ import numpy as np
 import json
 import cv2
 import face_recognition
+import logging
+from logging.handlers import TimedRotatingFileHandler
 # from config import HOST, WEBSOCKET_PORT
 
 HOST = '172.28.50.66'
@@ -21,6 +24,25 @@ detector = MTCNN()
 # 比检测位置向外扩一些
 t = 2
 
+
+def log(name, path):
+    logFilePath = path
+    logger = logging.getLogger(name)
+    logger.setLevel(logging.INFO)
+    handler = TimedRotatingFileHandler(logFilePath,
+                                       when="D",
+                                       interval=1,
+                                       backupCount=7)
+    formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
+
+    handler.setFormatter(formatter)
+
+    logger.addHandler(handler)
+    return logger
+
+
+detective_log = log('detective', r'/var/log/websocket/detective.log')
+recognition_log = log('recognition', r'/var/log/websocket/recognition.log')
 
 def load_redis():
     data = []
@@ -64,7 +86,7 @@ class WebSocket(threading.Thread):  # 继承Thread
         self.handshaken()
         self.queue = []
         self.queue_tmp = []
-        self.data = None
+        self.data = {}
         self.timer = None
 
     def handshaken(self):
@@ -108,6 +130,7 @@ class WebSocket(threading.Thread):  # 继承Thread
         while True:
             msg = ''
             mm = self.conn.recv(1024 * 1000000)
+
             # print(type(mm))
             if len(mm) <= 0:
                 if buffer:
@@ -149,8 +172,18 @@ class WebSocket(threading.Thread):  # 继承Thread
         res_list = []
         redis_data = load_redis()
         face_encodings_knows = [np.array(json.loads(i['feature'])) for i in redis_data]
+        start = time.time()
         faceRects = detector.detect_faces(img)
+        end = time.time()
         flag = True
+        log_data = {'createtime': int(time.time()*1000),
+                    'app': '轻行智眼系统',
+                    'alg': '思源云人脸检测算法',
+                    'interval': int((end-start) *1000),
+                    'result': 1 if len(faceRects) > 0 else 0
+                    }
+
+        detective_log.info('|'.join([str(k) + '=' + str(v) for k, v in log_data.items()]))
         if len(faceRects) > 0:  # 大于0则检测到人脸
             for idx, faceRect in enumerate(faceRects):  # 单独框出每一张人脸
                 x, y, w, h = faceRect['box']
@@ -160,7 +193,9 @@ class WebSocket(threading.Thread):  # 继承Thread
                     'w': w,
                     'h': h,
                 }
+                start = time.time()
                 face_encoding = face_recognition.face_encodings(img[y - t: y + h + t, x - t: x + w + t])
+                end = time.time()
                 if len(face_encoding) != 0:
                     face_encoding = face_encoding[0]
                     face_res = face_recognition.face_distance(face_encodings_knows, face_encoding)
@@ -168,19 +203,38 @@ class WebSocket(threading.Thread):  # 继承Thread
                     f = face_res.argmin()
                     data['recognition'] = '-1'
                     print('score:', k)
+                    # print('end:', end)
+                    # print('start:', start)
+                    data['score'] = k
+                    data['interval'] =int((end - start) * 1000)
+                    if 0 <= k < 0.13:
+                        data['syScore'] = 1
+                    else:
+                        data['syScore'] = -1.0835 * k + 1.1346
                     if k < 0.45:
+                        data['result'] = 1
                         data_tmp = redis_data[f]
                         if data_tmp not in self.queue and data_tmp not in self.queue_tmp:
                             self.queue.append(data_tmp)
                         if not self.data:
                             self.data = data_tmp
                         if data_tmp == self.data and flag:
-                            data.update(self.setData())
+                            # data.update(self.setData())
+                            data['recognition'] = '1'
                             flag = False
                         else:
                             data['recognition'] = '0'
-                res_list.append(data)
-                break
+                    else:
+                        data['result'] = 0
+                        # data.update(self.setData())
+
+                    data.update(self.setData())
+                    res_list.append(data)
+                    data['createTime'] = int(time.time()*1000)
+                    data['userType'] = 1
+                    data['company'] = 2
+                    recognition_log.info('|'.join([str(k) + '=' + str(v) for k, v in data.items()]))
+                    break
 
         # 如果被叫到的下一个人不在当前图像内
         if flag and self.data:
@@ -193,7 +247,6 @@ class WebSocket(threading.Thread):  # 继承Thread
     def setData(self):
         data = {}
         what_time = self.now_time()
-        sex = '女士' if self.data['sex'] == 0 else '先生'
         data['userType'] = self.data.get('userType')
         data['name'] = self.data.get('name')
         data['company'] = self.data.get('company')
@@ -202,10 +255,11 @@ class WebSocket(threading.Thread):  # 继承Thread
         data['iCompany'] = self.data.get('iCompany')
         data['iPosition'] = self.data.get('iPosition')
         data['visitTime'] = self.data.get('visitTime')
-        data['mp3'] = self.data[what_time[0]]
+        data['mp3'] = self.data.get(what_time[0])
         data['img'] = self.data.get('cloudUrl')
-        data['msg'] = data['name'] + sex + ', ' + what_time[1]
-        data['recognition'] = '1'
+        if self.data.get('sex'):
+            sex = '女士' if self.data['sex'] == 0 else '先生'
+            data['msg'] = data['name'] + sex + ', ' + what_time[1]
         return data
 
     def next_name(self):

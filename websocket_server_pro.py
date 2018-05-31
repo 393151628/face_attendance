@@ -196,7 +196,7 @@ class WebSocket(threading.Thread):  # 继承Thread
                 start = time.time()
                 face_encoding = face_recognition.face_encodings(img[y - t: y + h + t, x - t: x + w + t])
                 end = time.time()
-                if len(face_encoding) != 0:
+                if len(face_encoding) != 0 and face_encodings_knows:
                     face_encoding = face_encoding[0]
                     face_res = face_recognition.face_distance(face_encodings_knows, face_encoding)
                     k = face_res.min()

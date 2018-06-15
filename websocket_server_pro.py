@@ -15,6 +15,7 @@ import cv2
 import face_recognition
 import logging
 from logging.handlers import TimedRotatingFileHandler
+import copy
 # from config import HOST, WEBSOCKET_PORT
 
 HOST = '172.28.50.66'
@@ -230,10 +231,11 @@ class WebSocket(threading.Thread):  # 继承Thread
 
                     data.update(self.setData())
                     res_list.append(data)
-                    data['createTime'] = int(time.time()*1000)
-                    data['userType'] = 1
-                    data['company'] = 2
-                    recognition_log.info('|'.join([str(k) + '=' + str(v) for k, v in data.items()]))
+                    log_data = copy.copy(data)
+                    log_data['createTime'] = int(time.time()*1000)
+                    log_data['userType'] = 1
+                    log_data['company'] = 2
+                    recognition_log.info('|'.join([str(k) + '=' + str(v) for k, v in log_data .items()]))
                     break
 
         # 如果被叫到的下一个人不在当前图像内

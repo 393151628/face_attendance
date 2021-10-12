@@ -23,7 +23,7 @@ Markdown==2.6.11
 MarkupSafe==1.0
 mtcnn==0.0.6
 numpy==1.14.3
-opencv-python==3.4.0.12
+opencv-python==3.4.7.28
 parso==0.2.0
 pexpect==4.5.0
 pickleshare==0.7.4
